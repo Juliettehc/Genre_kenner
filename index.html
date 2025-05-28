@@ -1,74 +1,153 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Muziek Herkenner</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Orbitron', sans-serif;
+      background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    h1 {
+      margin: 30px 0 10px;
+      font-size: 2.8rem;
+      color: #ff4e50;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 1.2rem;
+      background-color: #4facfe;
+      border: none;
+      border-radius: 10px;
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      transition: all 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #00f2fe;
+    }
+
+    #label-container {
+      margin-top: 20px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 20px;
+      border-radius: 14px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      min-width: 250px;
+      text-align: left;
+    }
+
+    #label-container div {
+      margin: 8px 0;
+      font-size: 1.1rem;
+    }
+
+    canvas {
+      margin-top: 30px;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.7);
+    }
+  </style>
 </head>
 
 <body>
-    <div>Teachable Machine Audio Model</div>
-    <button type="button" onclick="init()">Start</button>
-    <div id="label-container"></div>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
-    <script
-        src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.4.0/dist/speech-commands.min.js"></script>
+  <h1>🎶 Genre Herkenner</h1>
+  <button onclick="init()">🎤 Start Luisteren</button>
+  <div id="label-container"></div>
+  <canvas id="visualizer" width="600" height="100"></canvas>
 
-    <script type="text/javascript">
-        // more documentation available at
-        // https://github.com/tensorflow/tfjs-models/tree/master/speech-commands
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.4.0/dist/speech-commands.min.js"></script>
 
-        // the link to your model provided by Teachable Machine export panel
-        const URL = "http://127.0.0.1:5500/audio-model/";
+  <script>
+    const URL = "https://juliettehc.github.io/Genre_kenner/audio-model/";
 
-        async function createModel() {
-            const checkpointURL =  URL + "model.json"; // model topology
-            const metadataURL =  URL + "metadata.json"; // model metadata
-            console.log(checkpointURL);
-            console.log(metadataURL);
-            const recognizer = speechCommands.create(
-                "BROWSER_FFT", // fourier transform type, not useful to change
-                undefined, // speech commands vocabulary feature, not useful for your models
-                checkpointURL,
-                metadataURL);
+    async function createModel() {
+      const checkpointURL = URL + "model.json";
+      const metadataURL = URL + "metadata.json";
+      const recognizer = speechCommands.create("BROWSER_FFT", undefined, checkpointURL, metadataURL);
+      await recognizer.ensureModelLoaded();
+      return recognizer;
+    }
 
-            // check that model and metadata are loaded via HTTPS requests.
-            await recognizer.ensureModelLoaded();
+    async function init() {
+      const recognizer = await createModel();
+      const classLabels = recognizer.wordLabels();
+      const labelContainer = document.getElementById("label-container");
+      labelContainer.innerHTML = '';
+      for (let i = 0; i < classLabels.length; i++) {
+        labelContainer.appendChild(document.createElement("div"));
+      }
 
-            return recognizer;
+      recognizer.listen(result => {
+        const scores = result.scores;
+        for (let i = 0; i < classLabels.length; i++) {
+          const classPrediction = classLabels[i] + ": " + result.scores[i].toFixed(2);
+          labelContainer.childNodes[i].innerHTML = classPrediction;
+        }
+      }, {
+        includeSpectrogram: true,
+        probabilityThreshold: 0.75,
+        invokeCallbackOnNoiseAndUnknown: true,
+        overlapFactor: 0.5
+      });
+
+      startVisualizer();
+    }
+
+    // 🎨 Simpele visualizer
+    function startVisualizer() {
+      const canvas = document.getElementById("visualizer");
+      const ctx = canvas.getContext("2d");
+
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 64;
+
+        source.connect(analyser);
+
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        function draw() {
+          requestAnimationFrame(draw);
+          analyser.getByteFrequencyData(dataArray);
+
+          ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          const barWidth = (canvas.width / bufferLength) * 2.5;
+          let barHeight;
+          let x = 0;
+
+          for (let i = 0; i < bufferLength; i++) {
+            barHeight = dataArray[i];
+            ctx.fillStyle = `hsl(${i * 15}, 100%, 60%)`;
+            ctx.fillRect(x, canvas.height - barHeight / 2, barWidth, barHeight / 2);
+            x += barWidth + 1;
+          }
         }
 
-        async function init() {
-            const recognizer = await createModel();
-            const classLabels = recognizer.wordLabels(); // get class labels
-            const labelContainer = document.getElementById("label-container");
-            for (let i = 0; i < classLabels.length; i++) {
-                labelContainer.appendChild(document.createElement("div"));
-            }
-
-            // listen() takes two arguments:
-            // 1. A callback function that is invoked anytime a word is recognized.
-            // 2. A configuration object with adjustable fields
-            recognizer.listen(result => {
-                const scores = result.scores; // probability of prediction for each class
-                // render the probability scores per class
-                for (let i = 0; i < classLabels.length; i++) {
-                    const classPrediction = classLabels[i] + ": " + result.scores[i].toFixed(2);
-                    labelContainer.childNodes[i].innerHTML = classPrediction;
-                }
-            }, {
-                includeSpectrogram: true, // in case listen should return result.spectrogram
-                probabilityThreshold: 0.75,
-                invokeCallbackOnNoiseAndUnknown: true,
-                overlapFactor: 0.50 // probably want between 0.5 and 0.75. More info in README
-            });
-
-            // Stop the recognition in 5 seconds.
-            // setTimeout(() => recognizer.stopListening(), 5000);
-        }
-    </script>
-
+        draw();
+      });
+    }
+  </script>
 </body>
-
 </html>
